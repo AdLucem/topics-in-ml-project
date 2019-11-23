@@ -1,4 +1,4 @@
 gym
-keras
+keras==2.2.0
 numpy
-tensorflow
+tensorflow==1.7.0

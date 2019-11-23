@@ -1,6 +1,4 @@
-"""
-solving pendulum using actor-critic model
-"""
+"""solving cart-pole using actor-critic model"""
 
 import gym
 import numpy as np
@@ -43,7 +41,7 @@ class ActorCritic:
 
         self.actor_critic_grad = tf.placeholder(
             tf.float32,
-            [None, self.env.action_space.shape[0]])
+            [None, 1])
         # where we will feed de/dC (from critic)
 
         actor_model_weights = self.actor_model.trainable_weights
@@ -68,7 +66,7 @@ class ActorCritic:
         # where we calcaulte de/dC for feeding above
 
         # Initialize for later gradient calculations
-        self.sess.run(tf.initialize_all_variables())
+        self.sess.run(tf.global_variables_initializer())
 
     # ====================================== #
     #          Model Definitions             #
@@ -79,7 +77,7 @@ class ActorCritic:
         h1 = Dense(24, activation='relu')(state_input)
         h2 = Dense(48, activation='relu')(h1)
         h3 = Dense(24, activation='relu')(h2)
-        output = Dense(self.env.action_space.shape[0], activation='relu')(h3)
+        output = Dense(1, activation='relu')(h3)
 
         model = Model(input=state_input, output=output)
         adam = Adam(lr=0.001)
@@ -91,7 +89,7 @@ class ActorCritic:
         state_h1 = Dense(24, activation='relu')(state_input)
         state_h2 = Dense(48)(state_h1)
 
-        action_input = Input(shape=self.env.action_space.shape)
+        action_input = Input(shape=[1])
         action_h1 = Dense(48)(action_input)
 
         merged = Add()([state_h2, action_h1])
@@ -182,19 +180,28 @@ class ActorCritic:
 def main():
     sess = tf.Session()
     K.set_session(sess)
-    env = gym.make("Pendulum-v0")
-    actor_critic = ActorCritic(env, sess)
+    env = gym.make("CartPole-v0")
 
+    actor_critic = ActorCritic(env, sess)
     # num_trials = 10000
     # trial_len  = 500
 
     cur_state = env.reset()
     action = env.action_space.sample()
+    done = False
+
     while True:
+
         env.render()
         cur_state = cur_state.reshape((1, env.observation_space.shape[0]))
         action = actor_critic.act(cur_state)
-        action = action.reshape((1, env.action_space.shape[0]))
+
+        if type(action) is not int:
+            p = action[0][0]
+            if p <= 0.5:
+                action = 0
+            else:
+                action = 1
 
         new_state, reward, done, _ = env.step(action)
         new_state = new_state.reshape((1, env.observation_space.shape[0]))
@@ -207,3 +214,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
