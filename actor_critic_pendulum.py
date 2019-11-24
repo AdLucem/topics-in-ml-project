@@ -190,10 +190,11 @@ def main():
 
     cur_state = env.reset()
     action = env.action_space.sample()
-    while True:
+    for i in range(100):
         env.render()
         cur_state = cur_state.reshape((1, env.observation_space.shape[0]))
         action = actor_critic.act(cur_state)
+        ls = [action[0], 0.0]
         action = action.reshape((1, env.action_space.shape[0]))
 
         new_state, reward, done, _ = env.step(action)
