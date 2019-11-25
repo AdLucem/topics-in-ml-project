@@ -78,9 +78,9 @@ class ActorCritic:
     def create_actor_model(self):
 
         state_input = Input(shape=self.env.observation_space.shape)
-        h1 = Dense(24, activation='relu')(state_input)
-        h2 = Dense(48, activation='relu')(h1)
-        h3 = Dense(24, activation='relu')(h2)
+        h1 = Dense(24, activation='tanh')(state_input)
+        h2 = Dense(48, activation='tanh')(h1)
+        h3 = Dense(24, activation='tanh')(h2)
         output = Dense(self.env.action_space.shape[0], activation='relu')(h3)
 
         model = Model(input=state_input, output=output)
@@ -118,6 +118,15 @@ class ActorCritic:
         self.memory.append([cur_state, action, reward, new_state, done])
 
     def _train_actor(self, samples):
+        print("Training actor network using:")
+        print("(A) Our sample set")
+        print("(B) The action predicted by current actor network, given the action from our sample set")
+        print("(C) The critic network's scoring of our current actor model's predicted action")
+        print("The gradient backpropped onto the actor network is:")
+        print("dE/dA = dE/dC * dC/dA")
+        print("E: error between critic's scoring of episode-sample action and predicted action")
+        print("C: critic network weights")
+        print("A: actor network weights")
         for sample in samples:
             cur_state, action, reward, new_state, _ = sample
             predicted_action = self.actor_model.predict(cur_state)
@@ -132,6 +141,7 @@ class ActorCritic:
             })
 
     def _train_critic(self, samples):
+        print("Training critic network using our current (Si, Ai) -> Ri pairs...")
         for sample in samples:
             cur_state, action, reward, new_state, done = sample
             if not done:
@@ -152,9 +162,13 @@ class ActorCritic:
         if len(self.memory) < batch_size:
             return
 
+        print("Since we've collected batch_size=" + str(batch_size) + " samples,")
+        print("We train the actor-critic network on one batch.")
+        print("--------------------------------------------------")
         samples = random.sample(self.memory, batch_size)
         self._train_critic(samples)
         self._train_actor(samples)
+        print("===================================================")
 
     # =================================================== #
     #            Target Model Updating                    #
