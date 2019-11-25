@@ -15,18 +15,21 @@ import tensorflow as tf
 import random
 from collections import deque
 
-# determines how to assign values to each state, i.e. takes the state
-# and action (two-input model) and determines the corresponding value
+# determines how to assign values to each state
+# i.e. takes the state and action (two-input model)
+# and determines the corresponding value
+
+
 class ActorCritic:
     def __init__(self, env, sess):
-        self.env  = env
+        self.env = env
         self.sess = sess
 
         self.learning_rate = 0.001
         self.epsilon = 1.0
         self.epsilon_decay = .995
         self.gamma = .95
-        self.tau   = .125
+        self.tau = .125
 
         # ====================================== #
         #              Actor Model               #
@@ -139,7 +142,6 @@ class ActorCritic:
         if len(self.memory) < batch_size:
             return
 
-        rewards = []
         samples = random.sample(self.memory, batch_size)
         self._train_critic(samples)
         self._train_actor(samples)
@@ -194,7 +196,7 @@ def main():
         env.render()
         cur_state = cur_state.reshape((1, env.observation_space.shape[0]))
         action = actor_critic.act(cur_state)
-        ls = [action[0], 0.0]
+
         action = action.reshape((1, env.action_space.shape[0]))
 
         new_state, reward, done, _ = env.step(action)

@@ -2,7 +2,8 @@
 Code taken from the following source, and altered:
 __name__   = predict.py
 __author__ = Yash Patel
-__description__ = Full prediction code of OpenAI Cartpole environment using Keras
+__description__ =
+Full prediction code of OpenAI Cartpole environment using Keras
 """
 
 import gym

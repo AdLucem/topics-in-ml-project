@@ -15,16 +15,18 @@ from collections import deque
 
 # determines how to assign values to each state, i.e. takes the state
 # and action (two-input model) and determines the corresponding value
+
+
 class ActorCritic:
     def __init__(self, env, sess):
-        self.env  = env
+        self.env = env
         self.sess = sess
 
         self.learning_rate = 0.001
         self.epsilon = 1.0
         self.epsilon_decay = .995
         self.gamma = .95
-        self.tau   = .125
+        self.tau = .125
 
         # ====================================== #
         #              Actor Model               #
@@ -80,6 +82,7 @@ class ActorCritic:
         output = Dense(1, activation='relu')(h3)
 
         model = Model(input=state_input, output=output)
+
         adam = Adam(lr=0.001)
         model.compile(loss="mse", optimizer=adam)
         return state_input, model
@@ -95,6 +98,7 @@ class ActorCritic:
         merged = Add()([state_h2, action_h1])
         merged_h1 = Dense(24, activation='relu')(merged)
         output = Dense(1, activation='relu')(merged_h1)
+
         model = Model(input=[state_input, action_input], output=output)
 
         adam = Adam(lr=0.001)
@@ -130,14 +134,19 @@ class ActorCritic:
                 future_reward = self.target_critic_model.predict(
                     [new_state, target_action])[0][0]
                 reward += self.gamma * future_reward
-            self.critic_model.fit([cur_state, tf.convert_to_tensor(action)], reward, verbose=0)
+
+            cur_state = cur_state.reshape((1, 4))
+            action = action.reshape((1, 1))
+            reward = np.array(reward)
+            reward = reward.reshape((1, 1))
+
+            self.critic_model.fit([cur_state, action], reward, verbose=0)
 
     def train(self):
         batch_size = 32
         if len(self.memory) < batch_size:
             return
 
-        rewards = []
         samples = random.sample(self.memory, batch_size)
         self._train_critic(samples)
         self._train_actor(samples)
@@ -149,14 +158,16 @@ class ActorCritic:
     def _update_actor_target(self):
         actor_model_weights = self.actor_model.get_weights()
         actor_target_weights = self.target_critic_model.get_weights()
+        for wt in actor_target_weights:
+            print(len(wt))
 
-        for i in range(len(actor_target_weights)):
+        for i in range(len(actor_model_weights)):
             actor_target_weights[i] = actor_model_weights[i]
         self.target_critic_model.set_weights(actor_target_weights)
 
     def _update_critic_target(self):
         critic_model_weights = self.critic_model.get_weights()
-        critic_target_weights = self.critic_target_model.get_weights()
+        critic_target_weights = self.target_critic_model.get_weights()
 
         for i in range(len(critic_target_weights)):
             critic_target_weights[i] = critic_model_weights[i]
@@ -195,6 +206,7 @@ def main():
         env.render()
         cur_state = cur_state.reshape((1, env.observation_space.shape[0]))
         action = actor_critic.act(cur_state)
+        action_keras = np.array(action).reshape((1, 1))
 
         if type(action) is not int:
             p = action[0][0]
@@ -206,13 +218,14 @@ def main():
         new_state, reward, done, _ = env.step(action)
         new_state = new_state.reshape((1, env.observation_space.shape[0]))
 
-        actor_critic.remember(cur_state, action, reward, new_state, done)
+        actor_critic.remember(cur_state, action_keras, reward, new_state, done)
         actor_critic.train()
 
         cur_state = new_state
-        n += 1
+
+        if done:
+            actor_critic.update_target()
 
 
 if __name__ == "__main__":
     main()
-
