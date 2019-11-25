@@ -16,6 +16,15 @@ from collections import deque
 # and action (two-input model) and
 # determines the corresponding value
 
+def pad(arr, size):
+    original_size = arr.shape[1]
+    padding_size = size - original_size
+    zeroes = np.zeros([1, padding_size])
+    return np.concatenate([arr, zeroes], axis=1)
+
+def unpad(arr, size):
+    return arr[0:, 0:size]
+
 
 class ActorCritic:
     def __init__(self, env, sess):
@@ -43,7 +52,7 @@ class ActorCritic:
 
         self.actor_critic_grad = tf.placeholder(
             tf.float32,
-            [None, self.env.action_space.shape[0]])
+            [None, self.env.observation_space.shape[0]])
         # where we will feed de/dC (from critic)
 
         actor_model_weights = self.actor_model.trainable_weights
@@ -79,9 +88,9 @@ class ActorCritic:
 
         state_input = Input(shape=self.env.observation_space.shape)
         h1 = Dense(24, activation='tanh')(state_input)
-        h2 = Dense(48, activation='tanh')(h1)
+        h2 = Dense(24, activation='tanh')(h1)
         h3 = Dense(24, activation='tanh')(h2)
-        output = Dense(self.env.action_space.shape[0], activation='relu')(h3)
+        output = Dense(self.env.observation_space.shape[0], activation='relu')(h3)
 
         model = Model(input=state_input, output=output)
         adam = Adam(lr=0.001)
@@ -94,7 +103,7 @@ class ActorCritic:
         state_h1 = Dense(24, activation='relu',
                          name="state_h1")(state_input)
 
-        action_input = Input(shape=self.env.action_space.shape,
+        action_input = Input(shape=self.env.observation_space.shape,
                              name="action_input")
         action_h1 = Dense(24, name="action_h1")(action_input)
 
@@ -130,6 +139,7 @@ class ActorCritic:
         for sample in samples:
             cur_state, action, reward, new_state, _ = sample
             predicted_action = self.actor_model.predict(cur_state)
+
             grads = self.sess.run(self.critic_grads, feed_dict={
                 self.critic_state_input: cur_state,
                 self.critic_action_input: predicted_action
@@ -151,7 +161,7 @@ class ActorCritic:
                 reward += self.gamma * future_reward
 
             cur_state = cur_state.reshape((1, 24))
-            action = action.reshape((1, 4))
+            action = action.reshape((1, 24))
             reward = np.array(reward)
             reward = reward.reshape((1, 1))
 
@@ -160,7 +170,7 @@ class ActorCritic:
     def train(self):
         batch_size = 32
         if len(self.memory) < batch_size:
-            return
+            return False
 
         print("Since we've collected batch_size=" + str(batch_size) + " samples,")
         print("We train the actor-critic network on one batch.")
@@ -168,6 +178,7 @@ class ActorCritic:
         samples = random.sample(self.memory, batch_size)
         self._train_critic(samples)
         self._train_actor(samples)
+        return True
         print("===================================================")
 
     # =================================================== #
@@ -175,22 +186,31 @@ class ActorCritic:
     # =================================================== #
 
     def _update_actor_target(self):
+        print("Updating actor...")
         actor_model_weights = self.actor_model.get_weights()
         actor_target_weights = self.target_critic_model.get_weights()
 
-        for i in range(len(actor_target_weights)):
+        for i in range(len(actor_target_weights)-2):
+            print(actor_target_weights[i], actor_model_weights[i])
             actor_target_weights[i] = actor_model_weights[i]
+        
+        actor_target_weights[6] = np.mean(actor_model_weights[6], axis=0)
+        actor_target_weights[7] = np.mean(actor_model_weights[7], axis=0).reshape((1,))
+
         self.target_critic_model.set_weights(actor_target_weights)
 
     def _update_critic_target(self):
+        print("Updating critic...")
         critic_model_weights = self.critic_model.get_weights()
-        critic_target_weights = self.critic_target_model.get_weights()
+        critic_target_weights = self.target_critic_model.get_weights()
 
         for i in range(len(critic_target_weights)):
             critic_target_weights[i] = critic_model_weights[i]
-        self.critic_target_model.set_weights(critic_target_weights)
+        self.target_critic_model.set_weights(critic_target_weights)
 
     def update_target(self):
+        print("Updating the target functions...")
+        print("----------------------------------")
         self._update_actor_target()
         self._update_critic_target()
 
@@ -201,7 +221,7 @@ class ActorCritic:
     def act(self, cur_state):
         self.epsilon *= self.epsilon_decay
         if np.random.random() < self.epsilon:
-            return self.env.action_space.sample()
+            return pad(self.env.action_space.sample().reshape(1, 4), 24)
         return self.actor_model.predict(cur_state)
 
 
@@ -219,14 +239,16 @@ def main():
         cur_state = cur_state.reshape((1, env.observation_space.shape[0]))
 
         action = actor_critic.act(cur_state)
-        action_taken = action.reshape((env.action_space.shape[0]))
-        action_keras = action.reshape((1, env.action_space.shape[0]))
+        action_taken = unpad(action, 4).reshape((4))
+        action_keras = action.reshape((1, env.observation_space.shape[0]))
 
         new_state, reward, done, _ = env.step(action_taken)
         new_state = new_state.reshape((1, env.observation_space.shape[0]))
 
         actor_critic.remember(cur_state, action_keras, reward, new_state, done)
-        actor_critic.train()
+        trained = actor_critic.train()
+        if trained:
+            actor_critic.update_target()
 
         cur_state = new_state
 
