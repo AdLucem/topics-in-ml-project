@@ -191,10 +191,12 @@ class ActorCritic:
         actor_target_weights = self.target_critic_model.get_weights()
 
         for i in range(len(actor_target_weights)-2):
-            print(actor_target_weights[i], actor_model_weights[i])
+            print(actor_target_weights[i].shape, actor_model_weights[i].shape)
             actor_target_weights[i] = actor_model_weights[i]
         
+        print(actor_target_weights[6].shape, np.mean(actor_model_weights[6], axis=0).shape)
         actor_target_weights[6] = np.mean(actor_model_weights[6], axis=0)
+        print(actor_target_weights[7].shape, np.mean(actor_model_weights[7], axis=0).reshape((1,)).shape)
         actor_target_weights[7] = np.mean(actor_model_weights[7], axis=0).reshape((1,))
 
         self.target_critic_model.set_weights(actor_target_weights)
