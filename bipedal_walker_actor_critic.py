@@ -35,7 +35,6 @@ class ActorCritic:
         self.epsilon = 1.0
         self.epsilon_decay = .995
         self.gamma = .95
-        self.tau = .125
 
         # ============================================ #
         #                Actor Model                   #
@@ -90,7 +89,7 @@ class ActorCritic:
         h1 = Dense(24, activation='tanh')(state_input)
         h2 = Dense(24, activation='tanh')(h1)
         h3 = Dense(24, activation='tanh')(h2)
-        output = Dense(self.env.observation_space.shape[0], activation='relu')(h3)
+        output = Dense(self.env.observation_space.shape[0], activation='tanh')(h3)
 
         model = Model(input=state_input, output=output)
         adam = Adam(lr=0.001)
@@ -127,15 +126,15 @@ class ActorCritic:
         self.memory.append([cur_state, action, reward, new_state, done])
 
     def _train_actor(self, samples):
-        print("Training actor network using:")
-        print("(A) Our sample set")
-        print("(B) The action predicted by current actor network, given the action from our sample set")
-        print("(C) The critic network's scoring of our current actor model's predicted action")
-        print("The gradient backpropped onto the actor network is:")
-        print("dE/dA = dE/dC * dC/dA")
-        print("E: error between critic's scoring of episode-sample action and predicted action")
-        print("C: critic network weights")
-        print("A: actor network weights")
+        # print("Training actor network using:")
+        # print("(A) Our sample set")
+        # print("(B) The action predicted by current actor network, given the action from our sample set")
+        # print("(C) The critic network's scoring of our current actor model's predicted action")
+        # print("The gradient backpropped onto the actor network is:")
+        # print("dE/dA = dE/dC * dC/dA")
+        # print("E: error between critic's scoring of episode-sample action and predicted action")
+        # print("C: critic network weights")
+        # print("A: actor network weights")
         for sample in samples:
             cur_state, action, reward, new_state, _ = sample
             predicted_action = self.actor_model.predict(cur_state)
@@ -151,13 +150,24 @@ class ActorCritic:
             })
 
     def _train_critic(self, samples):
-        print("Training critic network using our current (Si, Ai) -> Ri pairs...")
+        # print("Training critic network using our current (Si, Ai) -> Ri pairs...")
         for sample in samples:
             cur_state, action, reward, new_state, done = sample
             if not done:
                 target_action = self.target_actor_model.predict(new_state)
-                future_reward = self.target_critic_model.predict(
+                target_action_unpad = unpad(target_action, 4) 
+                avg_action = np.mean(target_action_unpad)
+
+                ###########################################
+                future_reward = 0
+                for i in range(len(target_action_unpad)):
+                    temp = target_action[i]
+                    target_action[i] = avg_action
+                    future_reward += self.target_critic_model.predict(
                     [new_state, target_action])[0][0]
+                    target_action[i] = temp
+                ###########################################
+
                 reward += self.gamma * future_reward
 
             cur_state = cur_state.reshape((1, 24))
@@ -172,37 +182,37 @@ class ActorCritic:
         if len(self.memory) < batch_size:
             return False
 
-        print("Since we've collected batch_size=" + str(batch_size) + " samples,")
-        print("We train the actor-critic network on one batch.")
-        print("--------------------------------------------------")
+        # print("Since we've collected batch_size=" + str(batch_size) + " samples,")
+        # print("We train the actor-critic network on one batch.")
+        # print("--------------------------------------------------")
         samples = random.sample(self.memory, batch_size)
         self._train_critic(samples)
         self._train_actor(samples)
         return True
-        print("===================================================")
+        # print("==================================================")
 
     # =================================================== #
     #            Target Model Updating                    #
     # =================================================== #
 
     def _update_actor_target(self):
-        print("Updating actor...")
+        # print("Updating actor...")
         actor_model_weights = self.actor_model.get_weights()
         actor_target_weights = self.target_critic_model.get_weights()
 
         for i in range(len(actor_target_weights)-2):
-            print(actor_target_weights[i].shape, actor_model_weights[i].shape)
-            actor_target_weights[i] = actor_model_weights[i]
+            actor_target_weights[i] = \
+            actor_model_weights[i].reshape(actor_target_weights[i].shape)
         
-        print(actor_target_weights[6].shape, np.mean(actor_model_weights[6], axis=0).shape)
-        actor_target_weights[6] = np.mean(actor_model_weights[6], axis=0)
-        print(actor_target_weights[7].shape, np.mean(actor_model_weights[7], axis=0).reshape((1,)).shape)
-        actor_target_weights[7] = np.mean(actor_model_weights[7], axis=0).reshape((1,))
+        actor_target_weights[6] = \
+        np.mean(actor_model_weights[6], axis=0).reshape(actor_target_weights[6].shape)
+        actor_target_weights[7] = \
+        np.mean(actor_model_weights[7], axis=0).reshape(actor_target_weights[7].shape)
 
         self.target_critic_model.set_weights(actor_target_weights)
 
     def _update_critic_target(self):
-        print("Updating critic...")
+        # print("Updating critic...")
         critic_model_weights = self.critic_model.get_weights()
         critic_target_weights = self.target_critic_model.get_weights()
 
@@ -211,10 +221,11 @@ class ActorCritic:
         self.target_critic_model.set_weights(critic_target_weights)
 
     def update_target(self):
-        print("Updating the target functions...")
-        print("----------------------------------")
+        # print("Updating the target functions...")
+        # print("----------------------------------")
         self._update_actor_target()
         self._update_critic_target()
+        # print("==================================")
 
     # ================================================= #
     #               Model Predictions                   #
@@ -233,26 +244,53 @@ def main():
     env = gym.make("BipedalWalker-v2")
     actor_critic = ActorCritic(env, sess)
 
-    cur_state = env.reset()
-    action = env.action_space.sample()
-    while True:
+    NUM_ITERATIONS = 100
 
-        env.render()
-        cur_state = cur_state.reshape((1, env.observation_space.shape[0]))
+    episode = 0
+    episode_rewards = []
 
-        action = actor_critic.act(cur_state)
-        action_taken = unpad(action, 4).reshape((4))
-        action_keras = action.reshape((1, env.observation_space.shape[0]))
+    for i in range(NUM_ITERATIONS):
+        print("Episode ", episode)
+        cur_state = env.reset()
+        action = env.action_space.sample()
+        done = False
+        epoch = 0
+        updated = False
+        cum_reward_epoch = 0
+        cum_reward_episode = 0
+    
+        while not done:
 
-        new_state, reward, done, _ = env.step(action_taken)
-        new_state = new_state.reshape((1, env.observation_space.shape[0]))
+            if updated:
+                print("Epoch ", epoch, "with reward ", cum_reward_epoch)
+                cum_reward_episode += cum_reward_epoch
+                cum_reward_epoch = 0
+                updated = False
 
-        actor_critic.remember(cur_state, action_keras, reward, new_state, done)
-        trained = actor_critic.train()
-        if trained:
-            actor_critic.update_target()
+            env.render()
+            cur_state = cur_state.reshape((1, env.observation_space.shape[0]))
 
-        cur_state = new_state
+            action = actor_critic.act(cur_state)
+            action_taken = unpad(action, 4).reshape((4))
+            action_keras = action.reshape((1, env.observation_space.shape[0]))
+
+            new_state, reward, done, _ = env.step(action_taken)
+            cum_reward_epoch += reward
+            new_state = new_state.reshape((1, env.observation_space.shape[0]))
+
+            actor_critic.remember(cur_state, action_keras, reward, new_state, done)
+            trained = actor_critic.train()
+            if trained:
+                actor_critic.update_target()
+                actor_critic.memory = []
+                epoch += 1
+                updated = True
+
+            cur_state = new_state
+
+        episode += 1
+        episode_rewards.append(cum_reward_episode)
+    print(episode_rewards)
 
 
 if __name__ == "__main__":
