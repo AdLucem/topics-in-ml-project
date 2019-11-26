@@ -10,6 +10,7 @@ import tensorflow as tf
 
 import random
 from collections import deque
+import matplotlib.pyplot as plt 
 
 # determines how to assign values to each state
 # i.e. takes the state
@@ -31,7 +32,7 @@ class ActorCritic:
         self.env = env
         self.sess = sess
 
-        self.learning_rate = 0.001
+        self.learning_rate = 0.01
         self.epsilon = 1.0
         self.epsilon_decay = .995
         self.gamma = .95
@@ -92,7 +93,7 @@ class ActorCritic:
         output = Dense(self.env.observation_space.shape[0], activation='tanh')(h3)
 
         model = Model(input=state_input, output=output)
-        adam = Adam(lr=0.001)
+        adam = Adam(lr=self.learning_rate)
         model.compile(loss="mse", optimizer=adam)
         return state_input, model
 
@@ -114,7 +115,7 @@ class ActorCritic:
 
         model = Model(input=[state_input, action_input], output=output)
 
-        adam = Adam(lr=0.001)
+        adam = Adam(lr=self.learning_rate)
         model.compile(loss="mse", optimizer=adam)
         return state_input, action_input, model
 
@@ -156,7 +157,7 @@ class ActorCritic:
             if not done:
                 target_action = self.target_actor_model.predict(new_state)
                 target_action_unpad = unpad(target_action, 4) 
-                avg_action = np.mean(target_action_unpad)
+                avg_action = np.max(target_action_unpad)
 
                 ###########################################
                 future_reward = 0
@@ -168,7 +169,7 @@ class ActorCritic:
                     target_action[i] = temp
                 ###########################################
 
-                reward += self.gamma * future_reward
+                reward += self.gamma * (future_reward/4.0)
 
             cur_state = cur_state.reshape((1, 24))
             action = action.reshape((1, 24))
@@ -176,19 +177,20 @@ class ActorCritic:
             reward = reward.reshape((1, 1))
 
             self.critic_model.fit([cur_state, action], reward, verbose=0)
+            return reward
 
     def train(self):
         batch_size = 32
         if len(self.memory) < batch_size:
-            return False
+            return False, "error"
 
         # print("Since we've collected batch_size=" + str(batch_size) + " samples,")
         # print("We train the actor-critic network on one batch.")
         # print("--------------------------------------------------")
         samples = random.sample(self.memory, batch_size)
-        self._train_critic(samples)
+        reward = self._train_critic(samples)
         self._train_actor(samples)
-        return True
+        return True, reward
         # print("==================================================")
 
     # =================================================== #
@@ -244,10 +246,13 @@ def main():
     env = gym.make("BipedalWalker-v2")
     actor_critic = ActorCritic(env, sess)
 
-    NUM_ITERATIONS = 100
+    NUM_ITERATIONS = 10
 
     episode = 0
+    epochs = 0
     episode_rewards = []
+    max_epochal_rewards = []
+    max_epochal_scores = []
 
     for i in range(NUM_ITERATIONS):
         print("Episode ", episode)
@@ -258,12 +263,16 @@ def main():
         updated = False
         cum_reward_epoch = 0
         cum_reward_episode = 0
-    
+        epochal_rewards = []
+        epochal_scores = []
+
         while not done:
 
             if updated:
                 print("Epoch ", epoch, "with reward ", cum_reward_epoch)
                 cum_reward_episode += cum_reward_epoch
+                epochal_rewards.append(cum_reward_epoch)
+                epoch += 1
                 cum_reward_epoch = 0
                 updated = False
 
@@ -279,19 +288,38 @@ def main():
             new_state = new_state.reshape((1, env.observation_space.shape[0]))
 
             actor_critic.remember(cur_state, action_keras, reward, new_state, done)
-            trained = actor_critic.train()
+            trained, score = actor_critic.train()
             if trained:
                 actor_critic.update_target()
                 actor_critic.memory = []
-                epoch += 1
                 updated = True
+                epochal_scores.append(score[0][0])
 
             cur_state = new_state
 
         episode += 1
+        epochs += epoch
         episode_rewards.append(cum_reward_episode)
-    print(episode_rewards)
+        max_epochal_rewards.append(max(epochal_rewards))
+        max_epochal_scores.append(max(epochal_scores))
+
+    return episode, epochs, episode_rewards, max_epochal_rewards, max_epochal_scores
 
 
 if __name__ == "__main__":
-    main()
+    x1, x2, y1, y2, y3 = main()
+
+    plt.subplot(2, 1, 1)
+    plt.plot(range(1, x1+1), y1)
+    plt.ylabel('Reward per episode')
+
+    #plt.subplot(2, 1, 2)
+    #plt.plot(range(1, x1+1), y2)
+    #plt.ylabel('Max. reward per epoch')
+
+    plt.subplot(2, 1, 2)
+    plt.plot(range(1, x1+1), y3)
+    plt.ylabel('Max. score per epoch')
+
+    plt.savefig("increased_lr_max_action_10_iters.png")
+    plt.show()

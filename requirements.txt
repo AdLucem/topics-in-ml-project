@@ -5,3 +5,4 @@ tensorflow==1.5.0
 box2d-py
 ipython
 jupyter
+matplotlib
